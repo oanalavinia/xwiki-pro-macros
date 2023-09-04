@@ -150,7 +150,16 @@ Not every parameters supported by the Confluence macro are supported by this bri
       <cache>long</cache>
     </property>
     <property>
-      <code>require(['jquery'], function($) {
+      <code>define('attachment-delete', {
+  prefix: 'core.viewers.attachments.delete.',
+  keys: [
+    'inProgress',
+    'done',
+    'error'
+  ]
+});
+
+require(['jquery', 'xwiki-l10n!attachment-delete'], function($, l10n) {
   var enhanceUploadInputs = function() {
     $.each($(".confluenceAttachmentsMacro input[type=file]"), function() {
       // Since the attachments liveData is refreshed on file upload, we don't need a response container.
@@ -171,6 +180,51 @@ Not every parameters supported by the Confluence macro are supported by this bri
     const associatedLivedata = $(e.target).closest('form').prevAll('.liveData')[0];
     const liveDataObj = $(associatedLivedata).data('liveData');
     liveDataObj.updateEntries();
+  });
+
+  //
+  // The delete action methods are similar to the ones from the attachments tab, but couldn't be reused. The problem is
+  // that when the tab is not opened we cannot just load the attachments.js file, since it expects some elements to be
+  // already loaded and it produces errors.
+  //
+
+  /**
+   * Open the delete confirmation modal on liveData attachment delete button.
+   */
+  $(document).on('click', '.confluenceAttachmentsMacro .attachmentActions .actiondelete', function(e) {
+    e.preventDefault();
+    var modal = $(e.currentTarget).closest('.liveData').nextAll('.deleteConfluenceAttachment');
+    modal.data('relatedTarget', e.currentTarget);
+    modal.modal('show');
+  });
+
+  /**
+   * On delete confirmation, delete attachment and refresh liveData.
+   */
+  $(document).on('click', '.confluenceAttachmentsMacro .deleteConfluenceAttachment input.btn-danger', function(e) {
+    e.preventDefault();
+    var modal = $(e.currentTarget).closest('.deleteConfluenceAttachment');
+    var button = $(modal.data('relatedTarget'));
+    var liveData = button.closest('.liveData').data('liveData');
+    var notification;
+
+    $.ajax({
+      url : button.prop('href'),
+      beforeSend : function() {
+        // Disable the delete button until request is finished.
+        button.prop('disabled', true);
+        notification = new XWiki.widgets.Notification(l10n['core.viewers.attachments.delete.inProgress'], 'inprogress');
+      },
+      success : function() {
+        liveData.updateEntries()
+        notification.replace(new XWiki.widgets.Notification(l10n['core.viewers.attachments.delete.done'], 'done'));
+      },
+      error: function() {
+        // Enable back button in case of error.
+        button.prop('disabled', false);
+        notification.replace(new XWiki.widgets.Notification(l10n['core.viewers.attachments.delete.failed'], 'error'));
+      }
+    })
   });
 });
 </code>
@@ -558,7 +612,7 @@ Not every parameters supported by the Confluence macro are supported by this bri
 #macro (showConfluenceAttachments $document)
   #template('attachment_macros.vm')
   #template('display_macros.vm')
-  #initRequiredSkinExtensions()
+  $xwiki.ssfx.use('js/xwiki/viewers/attachments.css', true)
   #set ($confluenceAttachmentMacroIndex = $confluenceAttachmentMacroIndex + 1)
   #set ($confluenceAttachmentMacroId = "confluenceAttachments$confluenceAttachmentMacroIndex")
   ##
@@ -588,6 +642,32 @@ Not every parameters supported by the Confluence macro are supported by this bri
   #end
 #end
 
+#macro (deleteConfluenceAttachmentModal)
+  ## Copied from the attachments tab code. The original macro cannot be used, since it will interfere with some js
+  ## specific to attachments tab. Precisely, if the attachments tab is already opened, everything is working correctly.
+  ## If it is not opened, we need to load the attachments.js code anyway, to use it's listeners, but there are parts
+  ## that rightfully assume that some elements are present on the page and errors will occur.
+  &lt;div class="modal fade deleteConfluenceAttachment" tabindex="-1" role="dialog"&gt;
+    &lt;div class="modal-dialog"&gt;
+      &lt;div class="modal-content"&gt;
+        &lt;div class="modal-header"&gt;
+          &lt;button type="button" class="close" data-dismiss="modal"&gt;&amp;times;&lt;/button&gt;
+          &lt;div class="modal-title"&gt;$services.localization.render('core.viewers.attachments.delete')&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class="modal-body"&gt;
+          &lt;div&gt;$services.localization.render('core.viewers.attachments.delete.confirm')&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class="modal-footer"&gt;
+          &lt;input type="button" class="btn btn-danger"  data-dismiss="modal"
+            value="$escapetool.xml($services.localization.render('core.viewers.attachments.delete'))"&gt;
+          &lt;input type="button" class="btn btn-default" data-dismiss="modal"
+            value="$escapetool.xml($services.localization.render('cancel'))"&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+#end
+
 ## Display a liveData with attachments from the specified document.
 #macro (showConfluenceAttachmentsLiveData $attachmentsDoc $liveDataId)
   #set ($liveDataConfig = {
@@ -597,7 +677,8 @@ Not every parameters supported by the Confluence macro are supported by this bri
         { 'id': 'filename', 'displayer': 'html' },
         { 'id': 'filesize', 'displayer': 'html' },
         { 'id': 'date', 'filter': 'date'},
-        { 'id': 'author', 'displayer': 'html' }
+        { 'id': 'author', 'displayer': 'html' },
+        { 'id': 'actions', 'displayer': 'html' }
       ],
       'entryDescriptor': {
         'idProperty': 'id'
@@ -642,7 +723,7 @@ Not every parameters supported by the Confluence macro are supported by this bri
 
   {{liveData
     id="$liveDataId"
-    properties="mimeType,filename,filesize,date,author"
+    properties="mimeType,filename,filesize,date,author,actions"
     source='liveTable'
     sourceParameters="$sourceParameters"
     sort="$liveDataSort"
@@ -651,7 +732,7 @@ Not every parameters supported by the Confluence macro are supported by this bri
 
   {{html clean="false"}}
     #uploadFileForm($liveDataId)
-    #deleteAttachmentModal()
+    #deleteConfluenceAttachmentModal()
   {{/html}}
 #end
 
