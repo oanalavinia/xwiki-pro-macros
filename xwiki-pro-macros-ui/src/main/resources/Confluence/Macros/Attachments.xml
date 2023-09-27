@@ -150,7 +150,7 @@ Not every parameters supported by the Confluence macro are supported by this bri
       <cache>long</cache>
     </property>
     <property>
-      <code>define('attachment-delete', {
+      <code>define('xwiki-confluence-attachments-messages', {
   prefix: 'core.viewers.attachments.delete.',
   keys: [
     'inProgress',
@@ -159,7 +159,7 @@ Not every parameters supported by the Confluence macro are supported by this bri
   ]
 });
 
-require(['jquery', 'xwiki-l10n!attachment-delete'], function($, l10n) {
+require(['jquery', 'xwiki-l10n!xwiki-confluence-attachments-messages'], function($, l10n) {
   var enhanceUploadInputs = function() {
     $.each($(".confluenceAttachmentsMacro input[type=file]"), function() {
       // Since the attachments liveData is refreshed on file upload, we don't need a response container.
@@ -176,10 +176,12 @@ require(['jquery', 'xwiki-l10n!attachment-delete'], function($, l10n) {
   })
 
   $(document).on('xwiki:html5upload:done', function(e) {
-    // Select the livedata above the upload form.
-    const associatedLivedata = $(e.target).closest('form').prevAll('.liveData')[0];
-    const liveDataObj = $(associatedLivedata).data('liveData');
-    liveDataObj.updateEntries();
+    if ($(e.target).prop('id').startsWith('confluenceAttachments')) {
+      // Select the livedata above the upload form.
+      const associatedLivedata = $(e.target).closest('form').prevAll('.liveData')[0];
+      const liveDataObj = $(associatedLivedata).data('liveData');
+      liveDataObj.updateEntries();
+    }
   });
 
   //
@@ -211,20 +213,16 @@ require(['jquery', 'xwiki-l10n!attachment-delete'], function($, l10n) {
     $.ajax({
       url : button.prop('href'),
       beforeSend : function() {
-        // Disable the delete button until request is finished.
-        button.prop('disabled', true);
-        notification = new XWiki.widgets.Notification(l10n['core.viewers.attachments.delete.inProgress'], 'inprogress');
+        notification = new XWiki.widgets.Notification(l10n['inProgress'], 'inprogress');
       },
       success : function() {
         liveData.updateEntries()
-        notification.replace(new XWiki.widgets.Notification(l10n['core.viewers.attachments.delete.done'], 'done'));
+        notification.replace(new XWiki.widgets.Notification(l10n['done'], 'done'));
       },
       error: function() {
-        // Enable back button in case of error.
-        button.prop('disabled', false);
-        notification.replace(new XWiki.widgets.Notification(l10n['core.viewers.attachments.delete.failed'], 'error'));
+        notification.replace(new XWiki.widgets.Notification(l10n['failed'], 'error'));
       }
-    })
+    });
   });
 });
 </code>
